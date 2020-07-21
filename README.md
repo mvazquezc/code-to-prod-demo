@@ -1,4 +1,4 @@
-# DevConf US 2020 Demo
+# Code To Production Demo
 
 For the required steps to build a demo environment look [here](./deploy-demo-env.md)
 

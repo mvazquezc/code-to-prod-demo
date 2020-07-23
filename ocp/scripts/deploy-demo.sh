@@ -73,3 +73,6 @@ sleep 15
 ARGOCD_ROUTE=$(oc -n argocd get route argocd -o jsonpath='{.spec.host}')
 argocd login $ARGOCD_ROUTE --insecure --username admin --password $ARGOCD_PASSWORD
 argocd account update-password --account admin --current-password $ARGOCD_PASSWORD --new-password 'r3dh4t1!'
+CONSOLE_ROUTE=$(oc -n openshift-console get route console -o jsonpath='{.spec.host}')
+echo "Argo CD Console: $ARGOCD_ROUTE"
+echo "OCP Console: $CONSOLE_ROUTE"

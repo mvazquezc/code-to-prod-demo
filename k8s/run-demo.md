@@ -25,18 +25,17 @@
 
     ~~~sh
     cd /var/tmp/code-to-prod-demo/reverse-words-cicd
-    CLUSTER_WILDCARD=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{ .spec.domain }')
     # Stash previous changes
     git stash
     # Update staging ingress  
     git checkout stage
-    sed -i "s/host: .*/host: reversewords-dev.${CLUSTER_WILDCARD}/" ingress.yaml
+    sed -i "s/host: .*/host: reversewords-dev.mario.lab/" ingress.yaml
     # Push stage changes
     git commit -am "Added ingress hostname"
     git push origin stage
     # Update production ingress
     git checkout prod
-    sed -i "s/host: .*/host: reversewords-prod.${CLUSTER_WILDCARD}/" ingress.yaml
+    sed -i "s/host: .*/host: reversewords-prod.mario.lab/" ingress.yaml
     # Push prod changes
     git commit -am "Added ingress hostname"
     git push origin prod
@@ -81,7 +80,7 @@ We are going to use WebHooks in order to run Pipelines automatically when new co
     1. Go to your application repository on GitHub, eg: https://github.com/mvazquezc/reverse-words
     2. Click on `Settings` -> `Webhooks`
     3. Create the following `Hook`
-       1. `Payload URL`: Output of command `oc -n reversewords-ci get route reversewords-webhook -o jsonpath='https://{.spec.host}'`
+       1. `Payload URL`: https://tekton-events.mario.lab
        2. `Content type`: application/json
        2. `Secret`: v3r1s3cur3
        3. `Events`: Check **Push Events**, leave others blank
@@ -95,7 +94,7 @@ We are going to use WebHooks in order to run Pipelines automatically when new co
     1. Go to your cicd repository on GitHub, eg: https://github.com/mvazquezc/reverse-words-cicd
     2. Click on `Settings` -> `Webhooks`
     3. Create the following `Hook`
-       1. `Payload URL`: Output of command `oc -n argocd get route argocd -o jsonpath='https://{.spec.host}'/api/webhook` 
+       1. `Payload URL`: https://argocd.oss20.mario.lab/api/webhook
        2. `Content type`: application/json
        2. `Secret`: v3r1s3cur3
        3. `Events`: Check **Push Events**, leave others blank
@@ -105,7 +104,7 @@ We are going to use WebHooks in order to run Pipelines automatically when new co
     4. We need to configure our `Secret Token` on Argo CD
         ~~~sh
         WEBHOOK_SECRET="v3r1s3cur3"
-        oc -n argocd patch secret argocd-secret -p "{\"data\":{\"webhook.github.secret\":\"$(echo -n $WEBHOOK_SECRET | base64)\"}}" --type=merge
+        kubectl -n argocd patch secret argocd-secret -p "{\"data\":{\"webhook.github.secret\":\"$(echo -n $WEBHOOK_SECRET | base64)\"}}" --type=merge
         ~~~
 3. Now we should have a working Webhook, let's test it
 
@@ -128,14 +127,114 @@ We are going to use WebHooks in order to run Pipelines automatically when new co
         git commit -m "Release updated to $NEW_RELEASE"
         git push origin main
         ~~~
-    3. Connect to the OpenShift Developer Console and navigate to the `reversewords-ci` namespace
-       1. You can see the PipelineRun on the console and follow the log 
+    3. Connect to the Tekton Dashboard (https://tekton-dashboard.<your-custom-domain>)
+       1. You can see the PipelineRun on the dashboard and follow the log 
     4. We can check the running images for our application pod and see that when the pipeline finishes a new deployment is triggered on ArgoCD
     5. When the Build pipeline finishes we can promote the new build to production
 
+        > **NOTE**: Change the stageAppUrl to match your environment ingress
+
         ~~~sh
-        tkn -n reversewords-ci pipeline start reverse-words-promote-pipeline -r app-git=reverse-words-cicd-git -p pathToDeploymentFile=./deployment.yaml -p stageBranch=stage -p stageAppUrl=$(oc -n reverse-words-stage get route -l app=reversewords-stage -o jsonpath='{.items[*].spec.host}')
+        tkn -n tekton-reversewords pipeline start reverse-words-promote-pipeline -r app-git=reverse-words-cicd-git -p pathToDeploymentFile=./deployment.yaml -p stageBranch=stage -p stageAppUrl=http://reversewords-dev.mario.lab
         ~~~
+
+## Tekton Polling Operator
+
+[Project Repository](https://github.com/bigkevmcd/tekton-polling-operator)
+
+Sometimes your clusters cannot be accessed from the Internet, thus, webhooks won't be a valid option for automatically run our pipelines upon git changes. In this scenario we can use the `Tekton Polling Operator` which will poll our repo in a given time interval and run the Pipeline when needed.
+
+You can run the polling operators in two ways:
+
+1. Deploy a polling operator in the namespace where the Pipeline definitions are created
+2. Deploy a global polling operator and give it access to the different namespaces with Pipelines definitions
+
+We are going to follow the second approach.
+
+> **NOTE**: Tekton Pipelines must be deployed in the cluster before deploying the operator
+
+1. Create a namespace and deploy the operator
+
+    ~~~sh
+    kubectl create namespace tekton-polling-operator
+    kubectl -n tekton-polling-operator apply -f https://github.com/bigkevmcd/tekton-polling-operator/releases/download/v0.2.0/release-v0.2.0.yaml
+    ~~~
+2. Create the required ClusterRole and ClusterRoleBinding for the Operator to create PipelineRuns on the tekton-reversewords namespace
+
+    ~~~sh
+    cat <<EOF | kubectl create -f -
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: polling-operator-cluster-role
+    rules:
+    - apiGroups:
+      - tekton.dev
+      resources:
+      - pipelineruns
+      verbs:
+      - create
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: polling-operator-role
+      namespace: tekton-reversewords
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: polling-operator-cluster-role
+    subjects:
+    - kind: ServiceAccount
+      name: tekton-polling-operator
+      namespace: tekton-polling-operator
+    EOF
+    ~~~
+3. Patch the default ServiceAccount in the tekton-reversewords repository so it has access to the quay secret (this is required since polling operator still doesn't support defining ServiceAccounts for specific steps)
+
+    ~~~sh
+    kubectl -n tekton-reversewords patch serviceaccount default -p '{"secrets":[{"name":"quay-user-pass"}]}'
+    ~~~
+4. Create the repository object for polling
+
+    ~~~sh
+    cat <<EOF | kubectl -n tekton-polling-operator create -f -
+    apiVersion: polling.tekton.dev/v1alpha1
+    kind: Repository
+    metadata:
+      name: reversewords-repository
+    spec:
+      url: https://github.com/mvazquezc/reverse-words.git
+      ref: main
+      frequency: 1m
+      type: github
+      pipelineRef:
+        name: reverse-words-build-pipeline
+        namespace: tekton-reversewords
+        params:
+        - name: imageTag
+          expression: commit.sha
+        - name: repoSha
+          expression: commit.sha
+        - name: repoUrl
+          expression: repoURL
+        resources:
+        - name: app-git
+          resourceSpec:
+            type: git
+            params:
+            - name: url
+              value: \$(params.repoUrl)
+            - name: revision
+              value: \$(params.repoSha)
+        - name: app-image
+          resourceSpec:
+            type: image
+            params:
+            - name: url
+              value: "quay.io/mavazque/tekton-reversewords"
+    EOF
+    ~~~
 
 ## Sealed Secrets
 
@@ -153,7 +252,7 @@ In order to solve this problem we are going to use Sealed Secrets, there are oth
 2. Deploy the KubeSeal Controller into the cluster
 
     ~~~sh
-    oc -n kube-system apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.12.4/controller.yaml
+    kubectl -n kube-system apply -f https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.12.4/controller.yaml
     ~~~
 3. Create a test secret
 
@@ -166,7 +265,7 @@ In order to solve this problem we are going to use Sealed Secrets, there are oth
     # Get updates
     git pull origin stage
     # Create the secret on a yaml file
-    oc -n reverse-words-stage create secret generic my-test-secret --from-literal=username=admin --from-literal=password=v3r1s3cur3 --dry-run=client -o yaml > /tmp/test-secret.yaml
+    kubectl -n reverse-words-stage create secret generic my-test-secret --from-literal=username=admin --from-literal=password=v3r1s3cur3 --dry-run=client -o yaml > /tmp/test-secret.yaml
     ~~~
 4. Seal the test secret
 

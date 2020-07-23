@@ -190,7 +190,7 @@ We are going to follow the second approach.
       namespace: tekton-polling-operator
     EOF
     ~~~
-3. Patch the default ServiceAccount in the tekton-reversewords repository so it has access to the quay secret (this is required since polling operator still doesn't support defining ServiceAccounts for specific steps)
+3. Patch the default ServiceAccount in the tekton-reversewords namespace so it has access to the quay secret (this is required since polling operator still doesn't support defining ServiceAccounts for specific steps)
 
     ~~~sh
     kubectl -n tekton-reversewords patch serviceaccount default -p '{"secrets":[{"name":"quay-user-pass"}]}'

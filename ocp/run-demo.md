@@ -189,7 +189,7 @@ We are going to follow the second approach.
       namespace: tekton-polling-operator
     EOF
     ~~~
-3. Patch the default ServiceAccount in the tekton-reversewords repository so it has access to the quay secret (this is required since polling operator still doesn't support defining ServiceAccounts for specific steps)
+3. Patch the default ServiceAccount in the reversewords-ci namespace so it has access to the quay secret (this is required since polling operator still doesn't support defining ServiceAccounts for specific steps)
 
     ~~~sh
     oc -n reversewords-ci patch serviceaccount default -p '{"secrets":[{"name":"quay-user-pass"}]}'
@@ -197,7 +197,7 @@ We are going to follow the second approach.
 4. Create the repository object for polling
 
     ~~~sh
-    cat <<EOF | kubectl -n tekton-polling-operator create -f -
+    cat <<EOF | oc -n tekton-polling-operator create -f -
     apiVersion: polling.tekton.dev/v1alpha1
     kind: Repository
     metadata:
@@ -209,7 +209,7 @@ We are going to follow the second approach.
       type: github
       pipelineRef:
         name: reverse-words-build-pipeline
-        namespace: tekton-reversewords
+        namespace: reversewords-ci
         params:
         - name: imageTag
           expression: commit.sha

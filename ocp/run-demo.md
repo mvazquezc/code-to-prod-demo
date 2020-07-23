@@ -192,7 +192,7 @@ We are going to follow the second approach.
 3. Patch the default ServiceAccount in the reversewords-ci namespace so it has access to the quay secret (this is required since polling operator still doesn't support defining ServiceAccounts for specific steps)
 
     ~~~sh
-    oc -n reversewords-ci patch serviceaccount default -p '{"secrets":[{"name":"quay-user-pass"}]}'
+    oc -n reversewords-ci patch serviceaccount pipeline -p '{"secrets":[{"name":"quay-user-pass"}]}'
     ~~~
 4. Create the repository object for polling
 

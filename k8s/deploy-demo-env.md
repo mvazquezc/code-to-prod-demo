@@ -5,7 +5,7 @@
 1. Deploy a K8s cluster using KCli
 
     ~~~sh
-    kcli create kube generic -P masters=1 -P workers=1  -P master_memory=4096 -P numcpus=2 -P worker_memory=4096 -P sdn=calico -P version=1.18 -P ingress=true -P ingress_method=nginx -P metallb=true code-to-prod-cluster
+    kcli create kube generic -P masters=1 -P workers=1  -P master_memory=4096 -P numcpus=2 -P worker_memory=4096 -P sdn=calico -P version=1.18 -P ingress=true -P ingress_method=nginx -P metallb=true codetoprodcluster
     ~~~
 2. Once deployed configure a demo domain name in dnsmasq for the Ingress Controller
 

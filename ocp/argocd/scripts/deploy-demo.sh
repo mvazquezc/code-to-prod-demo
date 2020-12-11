@@ -11,7 +11,7 @@ echo ""
 mkdir -p /var/tmp/code-to-prod-demo/
 echo "Deploy Argo CD"
 oc create namespace argocd
-oc apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v1.6.1/manifests/install.yaml
+oc apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v1.8.1/manifests/install.yaml
 echo "Create Ingress for Argo CD"
 oc -n argocd create route passthrough argocd --service=argocd-server --port=https --insecure-policy=Redirect
 ARGOCD_PASSWORD=$(oc -n argocd get pods -l app.kubernetes.io/name=argocd-server -o name | awk -F "/" '{print $2}')
@@ -23,7 +23,7 @@ kind: Subscription
 metadata:
   name: openshift-pipelines-operator-rh
 spec:
-  channel: ocp-4.4
+  channel: ocp-4.6
   installPlanApproval: Automatic
   name: openshift-pipelines-operator-rh
   source: redhat-operators

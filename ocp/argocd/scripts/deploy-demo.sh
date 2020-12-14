@@ -12,11 +12,64 @@ rm -rf /var/tmp/code-to-prod-demo/
 mkdir -p /var/tmp/code-to-prod-demo/
 echo "Deploy Argo CD"
 oc create namespace argocd
-oc apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v1.8.1/manifests/install.yaml
-echo "Create Ingress for Argo CD"
-oc -n argocd create route passthrough argocd --service=argocd-server --port=https --insecure-policy=Redirect
+cat <<EOF | oc -n argocd create -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: argocd-operatorgroup
+spec:
+  targetNamespaces:
+  - argocd
+EOF
+cat <<EOF | oc -n argocd create -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: argocd-operator
+spec:
+  channel: alpha
+  name: argocd-operator
+  source: community-operators
+  sourceNamespace: openshift-marketplace
+EOF
+# TODO: wait for subscription instead of sleeping
+sleep 120
+# Create ArgoCD instance
+cat <<EOF | oc -n argocd apply -f -
+apiVersion: argoproj.io/v1alpha1
+kind: ArgoCD
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  server:
+    route:
+      enabled: true
+  dex:
+    openShiftOAuth: true
+    image: quay.io/redhat-cop/dex
+    version: v2.22.0-openshift
+  resourceCustomizations: |
+    route.openshift.io/Route:
+      ignoreDifferences: |
+        jsonPointers:
+        - /spec/host
+    extensions/Ingress:
+      health.lua: |
+        hs = {}
+        hs.status = "Healthy"
+        return hs
+  rbac:
+    defaultPolicy: ''
+    policy: |
+      g, system:cluster-admins, role:admin
+      g, admins, role:admin
+      g, developer, role:developer
+      g, marketing, role:marketing
+    scopes: '[groups]'
+EOF
+sleep 120
 ARGOCD_PASSWORD=$(oc -n argocd get pods -l app.kubernetes.io/name=argocd-server -o name | awk -F "/" '{print $2}')
-oc -n argocd patch configmap argocd-cm -p '{"data":{"resource.customizations":"extensions/Ingress:\n  health.lua: |\n    hs = {}\n    hs.status = \"Healthy\"\n    return hs\n"}}'
 echo "Deploy Tekton Pipelines and Events"
 cat <<EOF | oc -n openshift-operators create -f -
 apiVersion: operators.coreos.com/v1alpha1
@@ -71,7 +124,7 @@ sed -i "s|<stage_deployment_file_path>|./deployment.yaml|" promote-to-prod-pipel
 oc -n reversewords-ci create -f promote-to-prod-pipeline.yaml
 oc -n reversewords-ci create route edge reversewords-webhook --service=el-reversewords-webhook --port=8080 --insecure-policy=Redirect
 sleep 15
-ARGOCD_ROUTE=$(oc -n argocd get route argocd -o jsonpath='{.spec.host}')
+ARGOCD_ROUTE=$(oc -n argocd get route argocd-server -o jsonpath='{.spec.host}')
 argocd login $ARGOCD_ROUTE --insecure --username admin --password $ARGOCD_PASSWORD
 argocd account update-password --account admin --current-password $ARGOCD_PASSWORD --new-password 'r3dh4t1!'
 CONSOLE_ROUTE=$(oc -n openshift-console get route console -o jsonpath='{.spec.host}')

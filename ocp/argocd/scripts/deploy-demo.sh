@@ -69,7 +69,7 @@ spec:
     scopes: '[groups]'
 EOF
 sleep 120
-ARGOCD_PASSWORD=$(oc -n argocd get pods -l app.kubernetes.io/name=argocd-server -o name | awk -F "/" '{print $2}')
+ARGOCD_PASSWORD=$(oc -n argocd get secret argocd-cluster -o jsonpath='{.data.admin\.password}' | base64 -d)
 echo "Deploy Tekton Pipelines and Events"
 cat <<EOF | oc -n openshift-operators create -f -
 apiVersion: operators.coreos.com/v1alpha1
@@ -112,7 +112,6 @@ oc -n reversewords-ci create -f github-triggerbinding.yaml
 WEBHOOK_SECRET="v3r1s3cur3"
 oc -n reversewords-ci create secret generic webhook-secret --from-literal=secret=${WEBHOOK_SECRET}
 sed -i "s/<git-triggerbinding>/github-triggerbinding/" webhook.yaml
-sed -i "/ref: github-triggerbinding/d" webhook.yaml
 sed -i "s/- name: pipeline-binding/- name: github-triggerbinding/" webhook.yaml
 oc -n reversewords-ci create -f webhook.yaml
 oc -n reversewords-ci create -f curl-task.yaml
@@ -126,7 +125,7 @@ oc -n reversewords-ci create route edge reversewords-webhook --service=el-revers
 sleep 15
 ARGOCD_ROUTE=$(oc -n argocd get route argocd-server -o jsonpath='{.spec.host}')
 argocd login $ARGOCD_ROUTE --insecure --username admin --password $ARGOCD_PASSWORD
-argocd account update-password --account admin --current-password $ARGOCD_PASSWORD --new-password 'r3dh4t1!'
 CONSOLE_ROUTE=$(oc -n openshift-console get route console -o jsonpath='{.spec.host}')
 echo "Argo CD Console: $ARGOCD_ROUTE"
+echo "Argo CD Admin Password: $ARGOCD_PASSWORD"
 echo "OCP Console: $CONSOLE_ROUTE"

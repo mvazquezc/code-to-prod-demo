@@ -1,7 +1,7 @@
 # Deploy OpenShift and the required Operators
 
-1. Deploy an OpenShift or OKD Cluster. For this demo we used OpenShift Container Platform v4.4.11
-2. Deploy Argo CD using the Operator
+1. Deploy an OpenShift or OKD Cluster. For this demo we used OpenShift Container Platform v4.6.6
+2. Deploy Argo CD using the OperatorG
 
     1. Deploy the Operator
     
@@ -65,14 +65,7 @@
         scopes: '[groups]'
     EOF
     ~~~
-
-3. Get the Argo CD admin user password
-
-    ~~~sh
-    ARGOCD_PASSWORD=$(oc -n argocd get pods -l app.kubernetes.io/name=argocd-server -o name | awk -F "/" '{print $2}')
-    echo $ARGOCD_PASSWORD > /tmp/argocd-password
-    ~~~
-4.  Deploy OpenShift Pipelines Operator
+3.  Deploy OpenShift Pipelines Operator
 
     ~~~sh
     cat <<EOF | oc -n openshift-operators create -f -
@@ -81,7 +74,7 @@
     metadata:
       name: openshift-pipelines-operator-rh
     spec:
-      channel: ocp-4.4
+      channel: ocp-4.6
       installPlanApproval: Automatic
       name: openshift-pipelines-operator-rh
       source: redhat-operators
@@ -234,12 +227,8 @@
     ~~~
 2. Login into Argo CD from the Cli
   
-    ~~~sh
+    ~~~sh  
+    ARGOCD_PASSWORD=$(oc -n argocd get secret argocd-cluster -o jsonpath='{.data.admin\.password}' | base64 -d)
     ARGOCD_ROUTE=$(oc -n argocd get route argocd -o jsonpath='{.spec.host}')
-    argocd login $ARGOCD_ROUTE --insecure --username admin --password $(cat /tmp/argocd-password)
-    ~~~
-3. Update Argo CD password
-
-    ~~~sh
-    argocd account update-password --account admin --current-password $(cat /tmp/argocd-password) --new-password 'r3dh4t1!'
+    argocd login $ARGOCD_ROUTE --insecure --username admin --password $ARGOCD_PASSWORD
     ~~~

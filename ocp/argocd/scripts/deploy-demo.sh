@@ -8,6 +8,7 @@ echo -ne "\nEnter your Git Token: "
 read -s GIT_AUTH_TOKEN
 
 echo ""
+rm -rf /var/tmp/code-to-prod-demo/
 mkdir -p /var/tmp/code-to-prod-demo/
 echo "Deploy Argo CD"
 oc create namespace argocd

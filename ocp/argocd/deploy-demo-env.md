@@ -1,29 +1,78 @@
 # Deploy OpenShift and the required Operators
 
 1. Deploy an OpenShift or OKD Cluster. For this demo we used OpenShift Container Platform v4.4.11
-2. Deploy Argo CD
+2. Deploy Argo CD using the Operator
 
+    1. Deploy the Operator
+    
     ~~~sh
     oc create namespace argocd
-    oc apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/v1.6.1/manifests/install.yaml
+    cat <<EOF | oc -n argocd create -f -
+    apiVersion: operators.coreos.com/v1
+    kind: OperatorGroup
+    metadata:
+      name: argocd-operatorgroup
+    spec:
+      targetNamespaces:
+      - argocd
+    EOF
+    cat <<EOF | oc -n argocd create -f -
+    apiVersion: operators.coreos.com/v1alpha1
+    kind: Subscription
+    metadata:
+      name: argocd-operator
+    spec:
+      channel: alpha
+      name: argocd-operator
+      source: community-operators
+      sourceNamespace: openshift-marketplace
+    EOF
     ~~~
+    2. Once the operator is running, create the operand
+ 
+    ~~~sh
+    cat <<EOF | oc -n argocd apply -f -
+    apiVersion: argoproj.io/v1alpha1
+    kind: ArgoCD
+    metadata:
+      name: argocd
+      namespace: argocd
+    spec:
+      server:
+        route:
+          enabled: true
+      dex:
+        openShiftOAuth: true
+        image: quay.io/redhat-cop/dex
+        version: v2.22.0-openshift
+      resourceCustomizations: |
+        route.openshift.io/Route:
+          ignoreDifferences: |
+            jsonPointers:
+            - /spec/host
+        extensions/Ingress:
+          health.lua: |
+            hs = {}
+            hs.status = "Healthy"
+            return hs
+      rbac:
+        defaultPolicy: ''
+        policy: |
+          g, system:cluster-admins, role:admin
+          g, admins, role:admin
+          g, developer, role:developer
+          g, marketing, role:marketing
+        scopes: '[groups]'
+    EOF
+    ~~~
+
 3. Get the Argo CD admin user password
 
     ~~~sh
     ARGOCD_PASSWORD=$(oc -n argocd get pods -l app.kubernetes.io/name=argocd-server -o name | awk -F "/" '{print $2}')
     echo $ARGOCD_PASSWORD > /tmp/argocd-password
     ~~~
-4. Create a passthrough route for Argo CD
-
-    ~~~sh
-    oc -n argocd create route passthrough argocd --service=argocd-server --port=https --insecure-policy=Redirect
-    ~~~
-5. Patch Health Status for Ingress objects on OpenShift
-
-    ~~~sh
-    oc -n argocd patch configmap argocd-cm -p '{"data":{"resource.customizations":"extensions/Ingress:\n  health.lua: |\n    hs = {}\n    hs.status = \"Healthy\"\n    return hs\n"}}'
-    ~~~
-6.  Deploy OpenShift Pipelines Operator
+4.  Deploy OpenShift Pipelines Operator
 
     ~~~sh
     cat <<EOF | oc -n openshift-operators create -f -

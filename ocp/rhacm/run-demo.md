@@ -40,8 +40,8 @@
     metadata:
       name: reverse-words-cicd
       annotations:
-    #    apps.open-cluster-management.io/webhook-enabled: "true"
-    #    apps.open-cluster-management.io/webhook-secret: reverse-words-webhook-secret
+        apps.open-cluster-management.io/webhook-enabled: "true"
+        apps.open-cluster-management.io/webhook-secret: "reverse-words-webhook-secret"
     spec:
       type: Git
       pathname: https://github.com/mvazquezc/reverse-words-cicd.git
